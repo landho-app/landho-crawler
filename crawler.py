@@ -91,10 +91,19 @@ def downloadCountries():
 				if not currentArea in countries:
 					countries[currentArea] = []
 
+				countryHtml = requests.get(a.get("href")).text
+				countrySoup = BeautifulSoup(countryHtml, "html.parser")
+				flag = None
+				for img in countrySoup.find_all("img"):
+					if "flags" in img.get("src") and ".gif/image" in img.get("src"):
+						flag = img.get("src").replace("http://www.noonsite.com", "")
+
+				print a.get_text()
 				countries[currentArea].append({
 					"name": a.get_text(),
 					"url": a.get("href"),
-					"slug": slugify(a.get_text())
+					"slug": slugify(a.get_text()),
+					"flag": flag
 				})
 
 	return countries
