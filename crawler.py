@@ -13,8 +13,6 @@ def downloadImage(url, path):
 		else:
 			url = "http://www.noonsite.com/" + url
 
-	#print url
-
 	r = requests.get(url, stream=True)
 	if r.status_code == 200:
 
@@ -44,7 +42,16 @@ def getSections(country, html):
 		downloadImage(img.get("src"), folder + fileName)
 		sectionStr = sectionStr.replace("src=\"http://www.noonsite.com", "src=\"")
 
-	return sectionStr
+	cities = []
+	for a in sections.find_all("a"):
+		if a != None and a.get("href") != None and a.get("href").startswith(country["url"]):
+			cities.append({
+				"name": a.get_text().replace("*", "").strip(),
+				"url": a.get("href"),
+				"slug": slugify(a.get_text().replace("*", "").strip())
+			})
+
+	return sectionStr, cities
 
 def downloadSection(country, section):
 	p = requests.get(country["url"] + "?rc=" + section)
@@ -64,8 +71,13 @@ def downloadFormalities(country):
 def downloadGeneralInfo(country):
 	return downloadSection(country, "GeneralInfo")
 
+# DOWNLOAD CITY
+def downloadCity(city):
+	c = requests.get(city["url"])
+	return getSections(city, c.text)
+
 # DOWNLOAD COUNTRIES
-def downloadCountries():
+def downloadCountries(getFlag=False):
 
 	countries = {}
 
@@ -91,12 +103,15 @@ def downloadCountries():
 				if not currentArea in countries:
 					countries[currentArea] = []
 
-				countryHtml = requests.get(a.get("href")).text
-				countrySoup = BeautifulSoup(countryHtml, "html.parser")
 				flag = None
-				for img in countrySoup.find_all("img"):
-					if "flags" in img.get("src") and ".gif/image" in img.get("src"):
-						flag = img.get("src").replace("http://www.noonsite.com", "")
+
+				if getFlag == True:
+					countryHtml = requests.get(a.get("href")).text
+					countrySoup = BeautifulSoup(countryHtml, "html.parser")
+					
+					for img in countrySoup.find_all("img"):
+						if "flags" in img.get("src") and ".gif/image" in img.get("src"):
+							flag = img.get("src").replace("http://www.noonsite.com", "")
 
 				print a.get_text()
 				countries[currentArea].append({
@@ -109,21 +124,36 @@ def downloadCountries():
 	return countries
 
 # download countries
+print "BUILD COUNTRIES.JSON"
 countries = downloadCountries()
 
+print "\n\n"
+print "FETCH INDIVIDUAL CONTRIES"
 # store countries in json file
 with open("data/countries.json", "w") as f:
 	f.write(json.dumps(countries))
 
 for area in countries:
 	for country in countries[area]:
-		profile = downloadProfile(country)
-		formalities = downloadFormalities(country)
-		generalinfo = downloadGeneralInfo(country)
+
+		print country["name"]
+		profile, cities = downloadProfile(country)
+		formalities, bla = downloadFormalities(country)
+		generalinfo, blub = downloadGeneralInfo(country)
 
 		folder = "data/" + country["slug"]
 
-		print country["name"]
+		# download cities
+		for city in cities:
+			print "- " + city["name"]
+			cityInfo, bam = downloadCity(city)
+
+			if not os.path.isdir(folder + "/city"):
+				os.mkdir(folder + "/city")
+
+			with open(folder + "/city/" + city["slug"] + ".html", "w") as f:
+				f.write(str(cityInfo))
+
 		if not os.path.isdir(folder + "/"):
 			os.mkdir(folder + "/")
 		
