@@ -38,13 +38,16 @@ def getSections(country, html):
 	sectionStr = str(sections)
 
 	for img in sections.find_all("img"):
-		fileName = img.get("src").replace("http://www.noonsite.com", "")
-		downloadImage(img.get("src"), folder + fileName)
-		sectionStr = sectionStr.replace("src=\"http://www.noonsite.com", "src=\"")
+		
+		if img != None and img.get("src") != None:
+			fileName = img.get("src").replace("http://www.noonsite.com", "")
+
+			downloadImage(img.get("src"), folder + fileName)
+			sectionStr = sectionStr.replace("src=\"http://www.noonsite.com", "src=\"")
 
 	cities = []
 	for a in sections.find_all("a"):
-		if a != None and a.get("href") != None and a.get("href").startswith(country["url"]):
+		if a != None and a.get("href") != None and a.get("href").startswith(country["url"]) and len(a.get("href")) < 90:
 			cities.append({
 				"name": a.get_text().replace("*", "").strip(),
 				"url": a.get("href"),
