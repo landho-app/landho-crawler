@@ -148,7 +148,11 @@ for area in countries:
 
 		# download cities
 		for city in cities:
-			print "- " + city["name"]
+			try:
+				print "- " + city["name"]
+			except:
+				pass
+				
 			cityInfo, bam = downloadCity(city)
 
 			if not os.path.isdir(folder + "/city"):
