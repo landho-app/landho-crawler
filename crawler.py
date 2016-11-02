@@ -1,4 +1,4 @@
-import requests, json, os
+import requests, json, os, sys
 from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from slugify import slugify
@@ -130,13 +130,14 @@ def downloadCountries(getFlag=False):
 print "BUILD COUNTRIES.JSON"
 countries = downloadCountries(True)
 
+# store countries in json file
+with open("data/countries.json", "w") as f:
+	f.write(json.dumps(countries))
+
 sys.exit()
 
 print "\n\n"
 print "FETCH INDIVIDUAL CONTRIES"
-# store countries in json file
-with open("data/countries.json", "w") as f:
-	f.write(json.dumps(countries))
 
 for area in countries:
 	for country in countries[area]:
