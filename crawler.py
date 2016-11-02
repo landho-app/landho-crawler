@@ -38,7 +38,7 @@ def getSections(country, html):
 	sectionStr = str(sections)
 
 	for img in sections.find_all("img"):
-		
+
 		if img != None and img.get("src") != None:
 			fileName = img.get("src").replace("http://www.noonsite.com", "")
 
@@ -65,7 +65,7 @@ def downloadSection(country, section):
 # DOWNLOAD PROFILE
 def downloadProfile(country):
 	return downloadSection(country, "CountryProfile")
-	
+
 # DOWNLOAD FORMATLITIES
 def downloadFormalities(country):
 	return downloadSection(country, "Formalities")
@@ -98,7 +98,7 @@ def downloadCountries(getFlag=False):
 		if child.name == "h2":
 
 			currentArea = child.get_text().strip()
-			
+
 		if child.name == "p":
 
 			for a in child.find_all("a"):
@@ -111,7 +111,7 @@ def downloadCountries(getFlag=False):
 				if getFlag == True:
 					countryHtml = requests.get(a.get("href")).text
 					countrySoup = BeautifulSoup(countryHtml, "html.parser")
-					
+
 					for img in countrySoup.find_all("img"):
 						if "flags" in img.get("src") and ".gif/image" in img.get("src"):
 							flag = img.get("src").replace("http://www.noonsite.com", "")
@@ -128,7 +128,9 @@ def downloadCountries(getFlag=False):
 
 # download countries
 print "BUILD COUNTRIES.JSON"
-countries = downloadCountries()
+countries = downloadCountries(True)
+
+sys.exit()
 
 print "\n\n"
 print "FETCH INDIVIDUAL CONTRIES"
@@ -152,7 +154,7 @@ for area in countries:
 				print "- " + city["name"]
 			except:
 				pass
-				
+
 			cityInfo, bam = downloadCity(city)
 
 			if not os.path.isdir(folder + "/city"):
@@ -163,7 +165,7 @@ for area in countries:
 
 		if not os.path.isdir(folder + "/"):
 			os.mkdir(folder + "/")
-		
+
 		with open(folder + "/profile.html", "w") as f:
 			f.write(str(profile))
 
