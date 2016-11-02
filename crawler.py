@@ -134,8 +134,6 @@ countries = downloadCountries(True)
 with open("data/countries.json", "w") as f:
 	f.write(json.dumps(countries))
 
-sys.exit()
-
 print "\n\n"
 print "FETCH INDIVIDUAL CONTRIES"
 
