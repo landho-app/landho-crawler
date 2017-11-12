@@ -1,10 +1,14 @@
-import requests, json, os, sys
+import requests, json, os, sys, hashlib, time, base64
 from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from slugify import slugify
+import couchdb
+
+# open connection to couchdb
+couch = couchdb.Server(os.getenv("COUCHDB_URI", "https://admin:wZu9TP5pFNS2sTM4@db.landho-app.com"))
 
 # DOWNLOAD IMAGE
-def downloadImage(url, path):
+def downloadImage(url):
 
 	if not url.startswith("http://www.noonsite.com"):
 
@@ -13,19 +17,11 @@ def downloadImage(url, path):
 		else:
 			url = "http://www.noonsite.com/" + url
 
-	r = requests.get(url, stream=True)
+	r = requests.get(url)
 	if r.status_code == 200:
-
-		if not os.path.exists(path):
-			os.makedirs(path)
-
-		if os.path.isdir(path):
-			os.rmdir(path)
-
-		if not os.path.exists(path):
-			with open(path, "wb") as f:
-				for chunk in r:
-					f.write(chunk)
+		return r.headers["Content-Type"], base64.b64encode(r.content)
+	else:
+		return None, None
 
 # GET SECTIONS
 def getSections(country, html):
@@ -82,8 +78,6 @@ def downloadCity(city):
 # DOWNLOAD COUNTRIES
 def downloadCountries(getFlag=False):
 
-	countries = {}
-
 	c = requests.get("http://www.noonsite.com/Countries")
 	countriesHtml = c.text
 
@@ -103,9 +97,6 @@ def downloadCountries(getFlag=False):
 
 			for a in child.find_all("a"):
 
-				if not currentArea in countries:
-					countries[currentArea] = []
-
 				flag = None
 
 				if getFlag == True:
@@ -117,22 +108,54 @@ def downloadCountries(getFlag=False):
 							flag = img.get("src").replace("http://www.noonsite.com", "")
 
 				print a.get_text()
-				countries[currentArea].append({
+				country = {
+					"continent": currentArea,
 					"name": a.get_text(),
 					"url": a.get("href"),
-					"slug": slugify(a.get_text()),
+					"_id": slugify(a.get_text()),
 					"flag": flag
-				})
+				}
 
-	return countries
+				country_checksum = checksum(country)
+				country_document = couch["countries"].get(slugify(a.get_text()))
+
+				# document needs an update, save to couchdb
+				if not country_document or country_document["checksum"] != country_checksum:
+					country["checksum"] = country_checksum
+					country["updated"] = timestamp()
+
+					if country_document != None:
+						country["_rev"] = country_document["_rev"]
+
+					# save document
+					_id, _rev = couch["countries"].save(country)
+
+					country["_rev"] = _rev
+				else:
+					country = country_document
+
+				# check if flag has already been attached
+				flag_att = couch["countries"].get_attachment(country, flag)
+				if not flag_att:
+					# download image
+					content_type, img_data = downloadImage(flag)
+					if content_type and img_data:
+						couch["countries"].put_attachment(country, img_data, flag, content_type)
+
+
+# CHECKSUM
+def checksum(obj):
+	return hashlib.md5(json.dumps(obj, sort_keys=True)).hexdigest()
+
+# TIMESTAMP
+def timestamp():
+	return time.mktime(datetime.utcnow().timetuple())
 
 # download countries
 print "BUILD COUNTRIES.JSON"
-countries = downloadCountries(True)
+downloadCountries(True)
 
-# store countries in json file
-with open("data/countries.json", "w") as f:
-	f.write(json.dumps(countries))
+sys.exit(0)
 
 print "\n\n"
 print "FETCH INDIVIDUAL CONTRIES"
