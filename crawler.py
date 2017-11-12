@@ -1,11 +1,11 @@
-import requests, json, os, sys, hashlib, time, base64
+import requests, json, os, sys, hashlib, time
 from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from slugify import slugify
 import couchdb
 
 # open connection to couchdb
-couch = couchdb.Server(os.getenv("COUCHDB_URI", "https://admin:wZu9TP5pFNS2sTM4@db.landho-app.com"))
+couch = couchdb.Server(os.getenv("COUCHDB_URI"))
 
 # DOWNLOAD IMAGE
 def downloadImage(url):
@@ -19,7 +19,7 @@ def downloadImage(url):
 
 	r = requests.get(url)
 	if r.status_code == 200:
-		return r.headers["Content-Type"], base64.b64encode(r.content)
+		return r.headers["Content-Type"], r.content
 	else:
 		return None, None
 
@@ -29,17 +29,23 @@ def getSections(country, html):
 	soup = BeautifulSoup(html, "html.parser")
 	sections = soup.find(id="noonsite-sections")
 
-	# download images
-	folder = "data/" + country["slug"]
-	sectionStr = str(sections)
+	sectionStr = unicode(sections)
+	images = []
 
+	# download images
 	for img in sections.find_all("img"):
 
 		if img != None and img.get("src") != None:
-			fileName = img.get("src").replace("http://www.noonsite.com", "")
+			fileName = prepareImgName(img.get("src").replace("http://www.noonsite.com", ""))
 
-			downloadImage(img.get("src"), folder + fileName)
-			sectionStr = sectionStr.replace("src=\"http://www.noonsite.com", "src=\"")
+			content_type, img_data = downloadImage(img.get("src"))
+			images.append({
+				"name": fileName,
+				"content_type": content_type,
+				"img_data": img_data
+			})
+
+			sectionStr = sectionStr.replace("src=\"" + img.get("src"), "src=\"" + fileName)
 
 	cities = []
 	for a in sections.find_all("a"):
@@ -50,33 +56,111 @@ def getSections(country, html):
 				"slug": slugify(a.get_text().replace("*", "").strip())
 			})
 
-	return sectionStr, cities
+	return sectionStr, cities, images
 
-def downloadSection(country, section):
+# PREPARE IMG NAME
+def prepareImgName(input):
+	if not input:
+		return None
+
+	return input.replace("/", "-").strip("-")
+
+# DOWNDLOAD SECTION
+def downloadSection(country, section, db_name):
 	p = requests.get(country["url"] + "?rc=" + section)
 	countryHtml = p.text
 
-	return getSections(country, countryHtml)
+	# download information
+	sectionStr, cities, images = getSections(country, countryHtml)
+
+	# store in couchdb
+	section = {
+		"_id": country["_id"],
+		"section": sectionStr
+	}
+
+	section_checksum = checksum(section)
+	section_document = couch[db_name].get(country["_id"])
+
+	if not section_document or section_document["checksum"] != section_checksum:
+		section["checksum"] = section_checksum
+		section["updated"] = timestamp()
+
+		if section_document != None:
+			section["_rev"] = section_document["_rev"]
+
+		# save section
+		_id, _rev = couch[db_name].save(section)
+
+		section["_rev"] = _rev
+	else:
+		section = section_document
+
+	# upload images
+	for image in images:
+		# check if flag has already been attached
+		img_att = couch[db_name].get_attachment(section, image["name"])
+		if not img_att:
+			if image["content_type"] and image["img_data"]:
+				couch[db_name].put_attachment(section, image["img_data"], image["name"], image["content_type"])
+
+	return sectionStr, cities
 
 # DOWNLOAD PROFILE
 def downloadProfile(country):
-	return downloadSection(country, "CountryProfile")
+	 return downloadSection(country, "CountryProfile", "profiles")
 
 # DOWNLOAD FORMATLITIES
 def downloadFormalities(country):
-	return downloadSection(country, "Formalities")
+	return downloadSection(country, "Formalities", "formalities")
 
 # DOWNLOAD GENERALINFO
 def downloadGeneralInfo(country):
-	return downloadSection(country, "GeneralInfo")
+	return downloadSection(country, "GeneralInfo", "generalinfos")
 
 # DOWNLOAD CITY
-def downloadCity(city):
+def downloadCity(country, city):
 	c = requests.get(city["url"])
-	return getSections(city, c.text)
+	sectionStr, cities, images = getSections(city, c.text)
+
+	# store in couchdb
+	section = {
+		"_id": country["_id"] + "-" + slugify(city["name"]),
+		"name": city["name"],
+		"country": country["_id"],
+		"city": sectionStr
+	}
+
+	db_name = "cities"
+	section_checksum = checksum(section)
+	section_document = couch[db_name].get(section["_id"])
+
+	if not section_document or section_document["checksum"] != section_checksum:
+		section["checksum"] = section_checksum
+		section["updated"] = timestamp()
+
+		if section_document != None:
+			section["_rev"] = section_document["_rev"]
+
+		# save section
+		_id, _rev = couch[db_name].save(section)
+
+		section["_rev"] = _rev
+	else:
+		section = section_document
+
+	# upload images
+	for image in images:
+		# check if flag has already been attached
+		img_att = couch["cities"].get_attachment(section, image["name"])
+		if not img_att:
+			if image["content_type"] and image["img_data"]:
+				couch["cities"].put_attachment(section, image["img_data"], image["name"], image["content_type"])
 
 # DOWNLOAD COUNTRIES
 def downloadCountries(getFlag=False):
+
+	countries = []
 
 	c = requests.get("http://www.noonsite.com/Countries")
 	countriesHtml = c.text
@@ -113,7 +197,7 @@ def downloadCountries(getFlag=False):
 					"name": a.get_text(),
 					"url": a.get("href"),
 					"_id": slugify(a.get_text()),
-					"flag": flag
+					"flag": prepareImgName(flag)
 				}
 
 				country_checksum = checksum(country)
@@ -140,8 +224,10 @@ def downloadCountries(getFlag=False):
 					# download image
 					content_type, img_data = downloadImage(flag)
 					if content_type and img_data:
-						couch["countries"].put_attachment(country, img_data, flag, content_type)
+						couch["countries"].put_attachment(country, img_data, prepareImgName(flag), content_type)
 
+				countries.append(country)
+	return countries
 
 # CHECKSUM
 def checksum(obj):
@@ -153,46 +239,26 @@ def timestamp():
 
 # download countries
 print "BUILD COUNTRIES.JSON"
-downloadCountries(True)
-
-sys.exit(0)
+countries = downloadCountries(True)
 
 print "\n\n"
 print "FETCH INDIVIDUAL CONTRIES"
 
-for area in countries:
-	for country in countries[area]:
+for country in countries:
 
-		print country["name"]
-		profile, cities = downloadProfile(country)
-		formalities, bla = downloadFormalities(country)
-		generalinfo, blub = downloadGeneralInfo(country)
+	# open connection to couchdb
+	couch = couchdb.Server(os.getenv("COUCHDB_URI", "https://admin:KCCNK4yqCeFfX9B2@db.landho-app.com"))
 
-		folder = "data/" + country["slug"]
+	print country["name"]
+	profile, cities = downloadProfile(country)
+	formalities, bla = downloadFormalities(country)
+	generalinfo, blub = downloadGeneralInfo(country)
 
-		# download cities
-		for city in cities:
-			try:
-				print "- " + city["name"]
-			except:
-				pass
+	# download cities
+	for city in cities:
+		try:
+			print "- " + city["name"]
+		except:
+			pass
 
-			cityInfo, bam = downloadCity(city)
-
-			if not os.path.isdir(folder + "/city"):
-				os.mkdir(folder + "/city")
-
-			with open(folder + "/city/" + city["slug"] + ".html", "w") as f:
-				f.write(str(cityInfo))
-
-		if not os.path.isdir(folder + "/"):
-			os.mkdir(folder + "/")
-
-		with open(folder + "/profile.html", "w") as f:
-			f.write(str(profile))
-
-		with open(folder + "/formalities.html", "w") as f:
-			f.write(str(formalities))
-
-		with open(folder + "/general.html", "w") as f:
-			f.write(str(generalinfo))
+		downloadCity(country, city)
