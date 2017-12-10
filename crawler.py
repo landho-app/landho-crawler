@@ -235,7 +235,7 @@ def checksum(obj):
 
 # TIMESTAMP
 def timestamp():
-	return time.mktime(datetime.utcnow().timetuple())
+	return float(datetime.utcnow().strftime("%s"))
 
 # download countries
 print "BUILD COUNTRIES.JSON"
@@ -247,7 +247,7 @@ print "FETCH INDIVIDUAL CONTRIES"
 for country in countries:
 
 	# open connection to couchdb
-	couch = couchdb.Server(os.getenv("COUCHDB_URI", "https://admin:KCCNK4yqCeFfX9B2@db.landho-app.com"))
+	couch = couchdb.Server(os.getenv("COUCHDB_URI"))
 
 	print country["name"]
 	profile, cities = downloadProfile(country)
