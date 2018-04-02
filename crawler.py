@@ -5,7 +5,7 @@ from slugify import slugify
 import couchdb
 
 # open connection to couchdb
-couch = couchdb.Server(os.getenv("COUCHDB_URI"))
+couch = couchdb.Server("https://admin:wZu9TP5pFNS2sTM4@db.landho-app.com")
 
 # DOWNLOAD IMAGE
 def downloadImage(url):
